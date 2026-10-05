@@ -1,0 +1,42 @@
+# ============================================
+# HYBRID RAG - RENDER PRODUCTION REQUIREMENTS
+# ============================================
+
+# FastAPI / Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+sse-starlette>=1.6.0
+
+# Environment / Core
+python-dotenv>=1.0.0
+dataclasses-json>=0.6.0
+
+# Cloud Retrieval
+qdrant-client>=1.7.0
+elasticsearch>=8.0.0,<9.0.0
+
+# Embeddings + Cross-Encoder Reranking
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# LangChain / LangGraph / LLM
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.20
+langgraph>=0.2.0
+openai>=1.0.0
+
+# HTTP / Utilities
+requests>=2.31.0
+tqdm>=4.66.0
+loguru>=0.7.0
+
+# Monitoring / Tracing
+langfuse>=3.0.0
+
+# Web Search / Tavily
+tavily-python>=0.3.0
+langchain-tavily>=0.1.0
