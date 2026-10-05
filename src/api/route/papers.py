@@ -15,7 +15,7 @@ from src.api.schemas.papers import (
     PaperListResponse,
     PaperResponse,
 )
-from src.services.paper_ingestion_service import PaperIngestionService
+
 from src.storage.errors import IngestionError, StorageError
 
 
@@ -23,9 +23,10 @@ router = APIRouter(prefix="/papers", tags=["papers"])
 
 
 @lru_cache(maxsize=1)
-def get_paper_service() -> PaperIngestionService:
-    return PaperIngestionService()
+def get_paper_service():
+    from src.services.paper_ingestion_service import PaperIngestionService
 
+    return PaperIngestionService()
 
 def _parse_json_object(value: str | None, field_name: str) -> dict:
     if not value:
