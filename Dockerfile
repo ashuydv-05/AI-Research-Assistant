@@ -26,9 +26,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY data/ ./data/
 COPY script/ ./script/
+COPY scripts/ ./scripts/
 
 # Create model cache directories with write permissions for non-root containers (e.g. Hugging Face Spaces)
-RUN mkdir -p /app/.cache/huggingface /app/.cache/torch /app/logs && \
+RUN mkdir -p /app/.cache/huggingface /app/.cache/torch /app/logs /app/uploads && \
     chmod -R 777 /app
 
 EXPOSE 7860

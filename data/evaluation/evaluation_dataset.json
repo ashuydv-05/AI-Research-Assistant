@@ -9,121 +9,177 @@
       "id": 1,
       "question": "What is the transformer architecture?",
       "ground_truth": "The transformer is a neural network architecture based entirely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 2,
       "question": "How does self-attention work in neural networks?",
       "ground_truth": "Self-attention computes the relationship and compatibility between different positions in a sequence using query, key, and value vectors.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 3,
       "question": "What is BERT and what does it stand for?",
       "ground_truth": "BERT stands for Bidirectional Encoder Representations from Transformers. It is designed to pre-train deep bidirectional representations from unlabeled text.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
     },
     {
       "id": 4,
       "question": "What is GPT and what does it stand for?",
       "ground_truth": "GPT stands for Generative Pre-trained Transformer, an autoregressive language model trained with causal masking.",
-      "relevant_documents": ["2005.14165"]
+      "relevant_documents": [
+        "2005.14165"
+      ]
     },
     {
       "id": 5,
       "question": "What is the attention mechanism in deep learning?",
       "ground_truth": "The attention mechanism allows the model to dynamically focus on relevant parts of the input sequence when generating or encoding representations.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 6,
       "question": "What is layer normalization and why is it used?",
       "ground_truth": "Layer normalization normalizes activations across features for each training example independently to stabilize training dynamics and accelerate convergence.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 7,
       "question": "What is masked language modeling in BERT?",
       "ground_truth": "Masked language modeling (MLM) trains the model by masking some percentage of input tokens at random and predicting those masked tokens using bidirectional context.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
     },
     {
       "id": 8,
       "question": "What is the encoder-decoder architecture in transformers?",
       "ground_truth": "The encoder-decoder architecture consists of an encoder that maps an input sequence of symbol representations to continuous representations, and a decoder that generates an output sequence one element at a time.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 9,
       "question": "What is positional encoding in transformers?",
       "ground_truth": "Positional encoding adds information about the relative or absolute position of tokens in the sequence since the architecture contains no recurrence or convolution.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 10,
       "question": "What is scaled dot-product attention formula?",
       "ground_truth": "Scaled dot-product attention computes Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V where Q, K, and V represent queries, keys, and values.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 11,
       "question": "How does multi-head attention work in the transformer?",
       "ground_truth": "Multi-head attention projects queries, keys, and values h times with different linear projections, applies attention in parallel, concatenates the outputs, and projects again.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 12,
       "question": "What is the role of position-wise feed-forward networks in transformer layers?",
       "ground_truth": "Position-wise feed-forward networks consist of two linear transformations with a ReLU or GELU activation in between, applied to each position separately and identically.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 13,
       "question": "What is bidirectional processing in language representation models?",
       "ground_truth": "Bidirectional processing jointly conditions on both left and right context in all layers, allowing each token to attend to tokens before and after it.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
     },
     {
       "id": 14,
       "question": "What is next sentence prediction (NSP) task?",
       "ground_truth": "Next sentence prediction is a binarized task where the model predicts whether sentence B is the actual sentence that follows sentence A in the corpus.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
     },
     {
       "id": 15,
       "question": "What is dropout and how does it prevent overfitting?",
       "ground_truth": "Dropout randomly sets a fraction of input units to zero at each update during training time, preventing feature co-adaptation and acting as regularization.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 16,
       "question": "What is label smoothing in transformer training?",
       "ground_truth": "Label smoothing penalizes overconfident predictions by distributing a small probability mass uniformly across all non-target classes.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 17,
       "question": "What is learning rate warmup in deep learning?",
       "ground_truth": "Learning rate warmup linearly increases the learning rate from zero to the maximum learning rate during the initial training steps before decaying it.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 18,
       "question": "Why are transformers more parallelizable than recurrent models?",
       "ground_truth": "Transformers process all sequence positions simultaneously using matrix multiplications in attention and feed-forward layers, eliminating sequential step dependencies.",
-      "relevant_documents": ["1706.03762"]
+      "relevant_documents": [
+        "1706.03762"
+      ]
     },
     {
       "id": 19,
       "question": "What is fine-tuning in pre-trained language models?",
       "ground_truth": "Fine-tuning initializes the model with pre-trained parameters and trains all parameters using labeled task-specific data with minimal architectural modifications.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
     },
     {
       "id": 20,
       "question": "What is the WordPiece tokenization method used in BERT?",
       "ground_truth": "WordPiece is a subword tokenization algorithm that breaks unseen or rare words into frequent subword units, balancing vocabulary size and out-of-vocabulary representation.",
-      "relevant_documents": ["1810.04805"]
+      "relevant_documents": [
+        "1810.04805"
+      ]
+    },
+    {
+      "id": 21,
+      "question": "Why can traditional text-based RAG struggle with queries that require understanding relationships between entities, and how does GraphRAG address this limitation?",
+      "ground_truth": "Traditional RAG primarily retrieves relevant textual passages based on semantic similarity, but it may fail to explicitly capture relationships between entities. GraphRAG addresses this by retrieving structured graph elements such as nodes, triplets, paths, or subgraphs, allowing the system to incorporate relational information and structural context into the generated response. ",
+      "relevant_documents": [
+        "Graph_RAG"
+      ]
+    },
+    {
+      "id": 22,
+      "question": "How does the graph retrieval component in GraphRAG differ from the retrieval component in traditional RAG systems?",
+      "ground_truth": "GraphRAG retrieves structured graph elements like nodes, edges, triplets, paths, and subgraphs, unlike traditional RAG which retrieves flat textual passages. ",
+      "relevant_documents": [
+        "Graph_RAG"
+      ]
     }
   ]
 }

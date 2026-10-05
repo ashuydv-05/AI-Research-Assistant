@@ -3,6 +3,7 @@ name = "arxiv-research-assistant"
 version = "0.1.0"
 description = "RAG system for querying arXiv papers using AI agents and hybrid search"
 requires-python = ">=3.12"
+
 dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
@@ -12,33 +13,55 @@ dependencies = [
     "sse-starlette>=1.6.0",
     "python-dotenv>=1.0.0",
     "dataclasses-json>=0.6.0",
+
+    # Retrieval & Vector Search
     "qdrant-client[fastembed]>=1.7.0",
     "elasticsearch>=8.0.0,<9.0.0",
     "sentence-transformers>=2.2.0",
     "torch>=2.0.0",
+
+    # LangChain / LangGraph
     "langchain>=0.1.0",
     "langchain-openai>=0.0.5",
     "langchain-community>=0.0.20",
     "langgraph>=0.2.0",
     "openai>=1.0.0",
+
+    # Document Processing
     "PyPDF2>=3.0.0",
     "docling>=1.0.0",
     "docling-core>=1.0.0",
+
+    # Utilities
     "requests>=2.31.0",
     "tqdm>=4.66.0",
     "loguru>=0.7.0",
+
+    # Web Search
+    "tavily-python>=0.3.0",
+    "langchain-tavily>=0.1.0",
+
+    # Observability
+    "langfuse>=3.0.0",
+
+    # Evaluation
+    "ragas>=0.1.0",
+    "deepeval>=0.21.0",
+
+    # OCR / Document Intelligence
+    "easyocr",
+
+    # RAG Optimization
+    "llmlingua>=0.2.0",
+
+    # Additional RAG / Retrieval Framework
+    "llama-index>=0.14.15",
+
+    # Testing
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.92.0",
-    "langfuse>=3.0.0",
-    "ragas>=0.1.0",
-    "deepeval>=0.21.0",
-    "easyocr",
-    "tavily-python>=0.3.0",
-    "langchain-tavily>=0.1.0",
-    "llmlingua>=0.2.0",
-    "llama-index>=0.14.15",
 ]
 
 [build-system]
@@ -50,4 +73,4 @@ dev = []
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["test"]
+testpaths = ["tests"]

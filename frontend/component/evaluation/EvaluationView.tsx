@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import {
   Play,
   RotateCw,
@@ -16,7 +17,9 @@ import {
   Terminal,
   Bot,
   Activity,
+  KeyRound,
 } from 'lucide-react';
+import { useApiKeyStatus } from '@/hooks/useApiKeyStatus';
 
 interface ConfigSummary {
   retrieval: string;
@@ -35,6 +38,8 @@ interface ConfigSummary {
 interface EvaluationSummary {
   status?: string;
   message?: string;
+  valid?: boolean;
+  warning?: string;
   timestamp?: string;
   dataset_path?: string;
   judge_model?: string;
@@ -77,7 +82,22 @@ interface StreamLog {
   type: 'info' | 'step' | 'success' | 'start' | 'error';
 }
 
+interface EvaluationStreamEvent {
+  type: 'combination_start' | 'step' | 'sample_complete' | 'complete' | 'error';
+  message: string;
+  timestamp?: string;
+  best_configuration?: string;
+  best_reason?: string;
+  comparison_matrix?: EvaluationSummary['comparison_matrix'];
+  configurations?: EvaluationSummary['configurations'];
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
+  const { status, evaluationReady } = useApiKeyStatus();
   const [summary, setSummary] = useState<EvaluationSummary | null>(null);
   const [configInfo, setConfigInfo] = useState<ConfigInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,7 +134,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
       setConfigInfo({
         model_1: { key: 'model_1', name: 'qwen/qwen3.8-27b', provider: 'Groq', family: 'Alibaba Qwen' },
         model_2: { key: 'model_2', name: 'openai/gpt-oss-20b', provider: 'Groq', family: 'OpenAI Family' },
-        judge: { name: 'gemini-2.0-flash', provider: 'Google Gemini', description: 'LLM Judge' },
+        judge: { name: 'openai/gpt-oss-120b', provider: 'OpenRouter', description: 'LLM Judge' },
         retrievers: {
           vector: { name: 'Vector Retrieval', description: 'Qdrant dense vector search' },
           hybrid: { name: 'Hybrid Retrieval', description: 'Qdrant + Elasticsearch BM25 + RRF' },
@@ -134,8 +154,8 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
       } else {
         setError('Could not fetch evaluation summary.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Error connecting to API.');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Error connecting to API.'));
     } finally {
       setFetching(false);
     }
@@ -147,6 +167,20 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
   }, []);
 
   const handleRunStreamingEvaluation = async () => {
+    if (!evaluationReady) {
+      setError('Add your Groq, OpenRouter, and Tavily API keys in Settings before running Evaluation.');
+      return;
+    }
+
+    const groqKey = sessionStorage.getItem('groq_api_key');
+    const openRouterKey = sessionStorage.getItem('openrouter_api_key');
+    const tavilyKey = sessionStorage.getItem('tavily_api_key');
+
+    if (!groqKey || !openRouterKey || !tavilyKey) {
+      setError('Add your Groq, OpenRouter, and Tavily API keys in Settings before running Evaluation.');
+      return;
+    }
+
     setLoading(true);
     setIsStreaming(true);
     setError(null);
@@ -156,11 +190,10 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'x-groq-api-key': groqKey,
+      'x-openrouter-api-key': openRouterKey,
+      'x-tavily-api-key': tavilyKey,
     };
-    if (typeof window !== 'undefined') {
-      const groqKey = localStorage.getItem('groq_api_key');
-      if (groqKey) headers['x-groq-api-key'] = groqKey;
-    }
 
     try {
       const response = await fetch(`${API_BASE}/evaluation/stream`, {
@@ -194,7 +227,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const eventData = JSON.parse(line.replace('data: ', '').trim());
+              const eventData = JSON.parse(line.replace('data: ', '').trim()) as EvaluationStreamEvent;
               handleStreamEvent(eventData);
             } catch (e) {
               console.error('Failed to parse SSE line:', line, e);
@@ -202,14 +235,14 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
           }
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to stream evaluation.');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to stream evaluation.'));
       setIsStreaming(false);
       setLoading(false);
     }
   };
 
-  const handleStreamEvent = (event: any) => {
+  const handleStreamEvent = (event: EvaluationStreamEvent) => {
     const timeStr = new Date().toLocaleTimeString();
 
     if (event.type === 'combination_start') {
@@ -266,11 +299,11 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
 
   const matrix = summary?.comparison_matrix || {};
   const configs = summary?.configurations || {};
-  const bestConfigKey = summary?.best_configuration;
+  const bestConfigKey = summary?.valid === false ? undefined : summary?.best_configuration;
 
   const model1Name = configInfo?.model_1.name || 'qwen/qwen3.8-27b';
   const model2Name = configInfo?.model_2.name || 'openai/gpt-oss-20b';
-  const judgeName = summary?.judge_model || configInfo?.judge.name || 'gemini-2.0-flash';
+  const judgeName = configInfo?.judge.name || (summary?.valid !== false ? summary?.judge_model : undefined) || 'openai/gpt-oss-120b';
 
   const getReadableConfigName = (key: string) => {
     return key
@@ -281,16 +314,16 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8f9fc] p-6 md:p-10">
+    <div className="flex-1 overflow-y-auto bg-[#f8f9fc] p-4 sm:p-6 md:p-10">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
               {onBackToChat && (
                 <button
                   onClick={onBackToChat}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-[#5542f6] hover:text-[#4332e6] bg-[#eeebff] px-3.5 py-1.5 rounded-xl border border-indigo-100 transition-colors shadow-xs cursor-pointer"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[#5542f6] hover:text-[#4332e6] bg-[#eeebff] px-3.5 py-1.5 rounded-md border border-indigo-100 transition-colors shadow-xs cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" /> Back to Chat
                 </button>
@@ -299,8 +332,8 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
                 2 Retrievers × 2 LLMs
               </span>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
-              <BarChart3 className="w-8 h-8 text-[#5542f6]" />
+            <h1 className="flex items-start gap-2 text-2xl font-extrabold tracking-normal text-slate-900 sm:text-3xl">
+              <BarChart3 className="mt-1 h-7 w-7 shrink-0 text-[#5542f6] sm:h-8 sm:w-8" />
               Automated RAG Evaluation Matrix
             </h1>
             <p className="text-slate-500 text-sm">
@@ -308,15 +341,15 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-xs text-xs text-slate-600 font-medium">
+          <div className="flex w-full flex-wrap items-center gap-3 md:w-auto md:justify-end">
+            <div className="flex w-full items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-xs sm:w-auto">
               <span>Sample size:</span>
               <select
                 aria-label="Evaluation sample size"
                 value={maxQuestions}
                 disabled={loading}
                 onChange={(e) => setMaxQuestions(Number(e.target.value))}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-medium focus:outline-hidden"
+                className="min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-800 focus:outline-hidden sm:flex-none"
               >
                 <option value={3}>3 Questions (Fast)</option>
                 <option value={5}>5 Questions</option>
@@ -328,7 +361,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
             <button
               onClick={fetchSummary}
               disabled={fetching || loading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium shadow-xs transition disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium shadow-xs transition disabled:opacity-50 cursor-pointer"
             >
               <RotateCw className={`w-4 h-4 text-slate-500 ${fetching ? 'animate-spin' : ''}`} />
               Refresh
@@ -336,8 +369,9 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
 
             <button
               onClick={handleRunStreamingEvaluation}
-              disabled={loading}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#5542f6] hover:bg-[#4332e6] text-white text-sm font-semibold shadow-md shadow-[#5542f6]/20 transition disabled:opacity-50 cursor-pointer"
+              disabled={loading || !evaluationReady}
+              title={evaluationReady ? 'Run evaluation' : 'Configure Groq, OpenRouter, and Tavily API keys'}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-md bg-[#5542f6] hover:bg-[#4332e6] text-white text-sm font-semibold shadow-md shadow-[#5542f6]/20 transition disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
@@ -352,11 +386,28 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
           </div>
         </div>
 
+        {!evaluationReady && (
+          <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-bold">Evaluation keys required</p>
+                <p className="mt-0.5 text-amber-800">
+                  Add {[!status.groq && 'Groq', !status.openrouter && 'OpenRouter', !status.tavily && 'Tavily'].filter(Boolean).join(', ')} to run the LLM-as-Judge benchmark.
+                </p>
+              </div>
+            </div>
+            <Link href="/settings" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-amber-900 px-3 text-xs font-bold text-white hover:bg-amber-950">
+              <KeyRound size={15} /> Open Settings
+            </Link>
+          </div>
+        )}
+
         {/* Model Setup Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* LLM 1 Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#eeebff] flex items-center justify-center text-[#5542f6] shrink-0 mt-0.5">
+          <div className="bg-white border border-slate-200/90 rounded-lg p-4 shadow-xs flex items-start gap-3">
+            <div className="w-9 h-9 rounded-md bg-[#eeebff] flex items-center justify-center text-[#5542f6] shrink-0 mt-0.5">
               <Bot size={18} />
             </div>
             <div>
@@ -370,8 +421,8 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
           </div>
 
           {/* LLM 2 Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 mt-0.5">
+          <div className="bg-white border border-slate-200/90 rounded-lg p-4 shadow-xs flex items-start gap-3">
+            <div className="w-9 h-9 rounded-md bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 mt-0.5">
               <Bot size={18} />
             </div>
             <div>
@@ -385,8 +436,8 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
           </div>
 
           {/* Judge Model Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 mt-0.5">
+          <div className="bg-white border border-slate-200/90 rounded-lg p-4 shadow-xs flex items-start gap-3">
+            <div className="w-9 h-9 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 mt-0.5">
               <Sparkles size={18} />
             </div>
             <div>
@@ -402,7 +453,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
 
         {/* Live Streaming Progress Section */}
         {isStreaming && (
-          <div className="bg-slate-900 text-slate-100 rounded-3xl p-6 shadow-xl space-y-4 border border-slate-800 animate-fade-in">
+          <div className="bg-slate-900 text-slate-100 rounded-lg p-6 shadow-xl space-y-4 border border-slate-800 animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <Activity className="w-5 h-5 text-[#818cf8] animate-pulse" />
@@ -417,7 +468,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
             {/* Progress Bar */}
             <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
               <div
-                className="bg-gradient-to-r from-[#5542f6] to-[#818cf8] h-full rounded-full transition-all duration-300"
+                className="h-full rounded-full bg-indigo-500 transition-all duration-300"
                 style={{ width: `${streamProgress.percent}%` }}
               />
             </div>
@@ -425,7 +476,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
             {/* Streaming Logs Terminal */}
             <div
               ref={logTerminalRef}
-              className="bg-slate-950/80 rounded-2xl p-4 font-mono text-xs max-h-56 overflow-y-auto space-y-1.5 border border-slate-800/80 shadow-inner"
+              className="bg-slate-950/80 rounded-lg p-4 font-mono text-xs max-h-56 overflow-y-auto space-y-1.5 border border-slate-800/80 shadow-inner"
             >
               {logs.map((log) => (
                 <div key={log.id} className="flex items-start gap-2 leading-relaxed">
@@ -450,17 +501,24 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
         )}
 
         {error && (
-          <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm">
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
             <span>{error}</span>
           </div>
         )}
 
+        {summary?.warning && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <span>{summary.warning}</span>
+          </div>
+        )}
+
         {/* Best Configuration Banner */}
-        {summary?.best_configuration && (
-          <div className="bg-white border-2 border-emerald-500/30 rounded-3xl p-6 shadow-xs relative overflow-hidden">
+        {summary?.valid !== false && summary?.best_configuration && (
+          <div className="bg-white border-2 border-emerald-500/30 rounded-lg p-6 shadow-xs relative overflow-hidden">
             <div className="flex items-start gap-4">
-              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-600">
+              <div className="p-3.5 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-600">
                 <Trophy className="w-7 h-7" />
               </div>
               <div className="space-y-1.5">
@@ -492,7 +550,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Vector Retrieval Column */}
-            <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+            <div className="bg-white border border-slate-200/90 rounded-lg p-6 space-y-4 shadow-xs">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <span className="font-bold text-slate-800 flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-sky-500" /> Vector Retrieval (Dense)
@@ -510,7 +568,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
                   return (
                     <div
                       key={key}
-                      className={`p-4 rounded-2xl border transition-all ${
+                      className={`p-4 rounded-lg border transition-all ${
                         isBest
                           ? 'bg-emerald-50/60 border-emerald-300 shadow-xs'
                           : 'bg-slate-50 border-slate-200'
@@ -537,7 +595,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
             </div>
 
             {/* Hybrid Retrieval Column */}
-            <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+            <div className="bg-white border border-slate-200/90 rounded-lg p-6 space-y-4 shadow-xs">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <span className="font-bold text-slate-800 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-[#5542f6]" /> Hybrid Retrieval (Dense + BM25 + RRF)
@@ -555,7 +613,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
                   return (
                     <div
                       key={key}
-                      className={`p-4 rounded-2xl border transition-all ${
+                      className={`p-4 rounded-lg border transition-all ${
                         isBest
                           ? 'bg-emerald-50/60 border-emerald-300 shadow-xs'
                           : 'bg-slate-50 border-slate-200'
@@ -584,7 +642,7 @@ export function EvaluationView({ onBackToChat }: EvaluationViewProps) {
         </div>
 
         {/* Detailed Metrics Table */}
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 space-y-4 shadow-xs">
+        <div className="bg-white border border-slate-200/90 rounded-lg p-6 space-y-4 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <FileText className="w-5 h-5 text-[#5542f6]" />

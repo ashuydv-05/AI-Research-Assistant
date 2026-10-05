@@ -4,9 +4,14 @@ from loguru import logger
 from src.agent.workflow import MultiAgentWorkflow, WorkflowOutcome
 from src.api.dependencies import get_workflow
 from src.api.models import ChatRequest, ChatResponse, ReasoningStep, Source
-from src.config.clients import request_groq_api_key, get_llm_client, extract_message_text
+from src.config.clients import (
+    request_groq_api_key,
+    request_tavily_api_key,
+)
+from src.services.chat_service import ChatService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+chat_service = ChatService()
 STEP_MAP = {
     "PLANNER:": ("planner", "Query analyzed"),
     "VECTOR_SEARCH:": ("vector_search", "Searching arXiv papers"),
@@ -55,9 +60,22 @@ async def chat(
     request: ChatRequest,
     workflow: MultiAgentWorkflow = Depends(get_workflow),
     x_groq_api_key: str | None = Header(None, alias="x-groq-api-key"),
+    x_tavily_api_key: str | None = Header(None, alias="x-tavily-api-key"),
 ) -> ChatResponse:
     header_key = (x_groq_api_key or request.groq_api_key or "").strip()
-    token = request_groq_api_key.set(header_key or None)
+    tavily_key = (x_tavily_api_key or request.tavily_api_key or "").strip()
+    missing_keys = []
+    if not header_key:
+        missing_keys.append("Groq")
+    if not tavily_key:
+        missing_keys.append("Tavily")
+    if missing_keys:
+        raise HTTPException(
+            status_code=428,
+            detail=f"Configure {' and '.join(missing_keys)} API key{'s' if len(missing_keys) > 1 else ''} before using Chat.",
+        )
+    groq_token = request_groq_api_key.set(header_key or None)
+    tavily_token = request_tavily_api_key.set(tavily_key or None)
 
     session_id = request.session_id or generate_session_id()
     logger.info(
@@ -68,42 +86,32 @@ async def chat(
     start_time = time.time()
     try:
         logger.info(f"[API] Starting workflow.run() for session {session_id}")
-        result: WorkflowOutcome = workflow.run(request.message, session_id=session_id)
+        result: WorkflowOutcome = chat_service.answer(
+            request.message, session_id, workflow
+        )
         logger.info(
             f"[API] Workflow completed. Sources count: {len(result.source)}, Reasoning steps: {len(result.reasoning_step)}"
         )
-        answer = result.answer
-        if not answer or not str(answer).strip():
-            logger.warning("[API] Workflow returned empty answer, generating fallback response...")
-            try:
-                llm = get_llm_client()
-                direct_resp = llm.invoke(
-                    f"You are an expert AI academic research assistant. Please answer this query thoroughly: {request.message}"
-                )
-                answer = extract_message_text(direct_resp)
-            except Exception as ex:
-                logger.error(f"[API] Fallback generation error: {ex}")
-                answer = ""
-            if not answer:
-                steps = "; ".join(result.reasoning_step[-3:]) if result.reasoning_step else "no agent steps"
-                answer = (
-                    "I could not complete retrieval-backed generation for this question. "
-                    f"Last agent steps: {steps}. Check Qdrant connectivity and Groq model output."
-                )
-
         execution_time = (time.time() - start_time) * 1000
         return ChatResponse(
-            answer=answer,
+            answer=result.answer,
             session_id=session_id,
             reasoning_steps=build_reasoning_steps(result),
             sources=convert_sources(result.source),
             execution_time=execution_time,
             node_timings=result.node_timings,
+            source_mode=result.source_mode,
+            source_label=result.source_label,
+            retrieval_verified=result.retrieval_verified,
+            retrieval_status=result.retrieval_status,
+            fallback_used=result.fallback_used,
+            fallback_reason=result.fallback_reason,
         )
     except Exception as e:
         logger.error(f"Error processing chat request: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to process request: {str(e)}"
+            status_code=500, detail="The research assistant could not process this request."
         )
     finally:
-        request_groq_api_key.reset(token)
+        request_groq_api_key.reset(groq_token)
+        request_tavily_api_key.reset(tavily_token)

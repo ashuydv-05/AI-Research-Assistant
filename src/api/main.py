@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.api.route.chat import router as chat_router
 from src.api.route.health import router as health_router
 from src.api.route.evaluation import router as evaluation_router
+from src.api.route.papers import router as papers_router
 from src.agent.workflow import MultiAgentWorkflow
 
 
@@ -30,9 +31,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +46,7 @@ app.add_middleware(
 app.include_router(chat_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(evaluation_router, prefix="/api")
+app.include_router(papers_router, prefix="/api")
 
 
 @app.get("/")
@@ -60,6 +67,7 @@ async def api_info():
             "chat": "/api/chat",
             "chat_stream": "/api/chat/stream",
             "health": "/api/health",
+            "papers": "/api/papers",
         },
     }
 

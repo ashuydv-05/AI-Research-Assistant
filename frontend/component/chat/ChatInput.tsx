@@ -10,6 +10,7 @@ interface ChatInputProps {
   onStop: () => void;
   isLoading: boolean;
   isStreaming: boolean;
+  disabled?: boolean;
   onExternalInput?: (value: string) => void;
 }
 
@@ -20,6 +21,7 @@ export function ChatInput({
   onStop,
   isLoading,
   isStreaming,
+  disabled = false,
   onExternalInput,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -48,14 +50,14 @@ export function ChatInput({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (input.trim() && !isLoading && !isStreaming) {
+      if (input.trim() && !isLoading && !isStreaming && !disabled) {
         onSubmit();
       }
     }
   };
 
   const handleSubmit = () => {
-    if (input.trim() && !isLoading && !isStreaming) {
+    if (input.trim() && !isLoading && !isStreaming && !disabled) {
       onSubmit();
     }
   };
@@ -75,10 +77,10 @@ export function ChatInput({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message arXiv Research Assistant..."
+            placeholder={disabled ? 'Configure Groq and Tavily keys to start chatting' : 'Ask a research question...'}
             rows={1}
             className="flex-1 bg-transparent resize-none outline-none pl-5 pr-14 py-3.5 text-slate-800 placeholder-slate-400 max-h-[200px] text-sm leading-relaxed min-h-[48px]"
-            disabled={isActive}
+            disabled={isActive || disabled}
           />
 
           <div className="absolute right-2">
@@ -91,15 +93,15 @@ export function ChatInput({
               )}
               <button
                 onClick={isActive ? onStop : handleSubmit}
-                disabled={!isActive && !input.trim()}
+                disabled={!isActive && (!input.trim() || disabled)}
                 className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-all duration-200 ${
                   isActive
                     ? 'bg-[#5542f6] text-white cursor-pointer shadow-md'
-                    : !input.trim()
+                    : !input.trim() || disabled
                     ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
                     : 'bg-[#5542f6] text-white hover:bg-[#4332e6] hover:scale-105 shadow-md shadow-[#5542f6]/20 cursor-pointer'
                 }`}
-                title={isActive ? 'Stop' : 'Send message'}
+                title={isActive ? 'Stop' : disabled ? 'Configure required API keys' : 'Send message'}
               >
                 {isActive ? (
                   <Square size={13} fill="currentColor" />

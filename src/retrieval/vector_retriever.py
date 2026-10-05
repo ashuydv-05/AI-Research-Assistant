@@ -1,13 +1,15 @@
-from loguru import logger
 from src.retrieval.base import BaseRetriever
-from src.retrieval.hybrid_search import SearchResult, VectorSearch
+from src.retrieval.dense.qdrant_retriever import QdrantRetriever
+from src.retrieval.retrieval_result import SearchResult
 
-
+'''
+This is My Vector Retrieval File (Dense retrieval using Qdrant)
+'''
 class VectorRetriever(BaseRetriever):
     """Semantic vector-only retriever using Qdrant dense embeddings."""
 
-    def __init__(self, searcher: VectorSearch | None = None):
-        self.searcher = searcher if searcher is not None else VectorSearch()
+    def __init__(self, searcher=None):
+        self.searcher = searcher if searcher is not None else QdrantRetriever()
 
     @property
     def name(self) -> str:
@@ -16,8 +18,6 @@ class VectorRetriever(BaseRetriever):
     def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
         if not query or not query.strip():
             return []
-        try:
+        if hasattr(self.searcher, "dense_search"):
             return self.searcher.dense_search(query=query, top_k=top_k)
-        except Exception as e:
-            logger.error(f"[VectorRetriever] Search failed: {e}")
-            return []
+        return self.searcher.search(query=query, top_k=top_k)

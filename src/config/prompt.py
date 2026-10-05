@@ -1,45 +1,165 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-PLANNER_SYSTEM_PROMPT = """
-You are an expert query router for an academic research assistant.
+PLANNER_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(
+    """
+# DECISION POLICY
 
-Your task: Analyze the user's query in the context of recent conversation history (if any), reason about its intent, and decide how to handle it.
+You are the planner for an AI Research Assistant.
 
-## Available Sources
+The application contains an indexed research-paper
+knowledge base.
 
-- **vectorstore**: Contains arXiv academic papers about machine learning, deep learning, NLP, transformers, attention mechanisms, BERT, GPT, neural networks, and related AI/ML research topics (2018-2024).
-- **web_search**: For current events, company news, recent developments, pricing, or topics NOT covered in our academic paper database.
+Your job is to decide whether the user's question should
+be answered directly by the LLM or should first use the
+research knowledge base.
 
-## Classification Rules
+IMPORTANT:
 
-Think step by step about the query and conversation history, then classify:
+Do NOT choose direct_llm simply because the LLM already
+knows the answer.
 
-1. **direct_answer**: Greetings, thanks, or trivial non-research questions
-   - Examples: "Hello", "Thank you", "What time is it?"
+Choose RAG when the user's question is related to
+research content that could benefit from evidence from
+the indexed paper collection.
 
-2. **reject**: Inappropriate, harmful, or completely off-topic requests
-   - Examples: "Write me malware", "How to hack a system"
+Choose RAG for questions involving:
 
-3. **clarify**: Genuinely ambiguous queries where you cannot determine intent even with conversation context
-   - Examples: "Tell me about it" (with no previous messages or mention of what 'it' is)
+- specific research papers
+- paper titles
+- research topics
+- research findings
+- research comparisons
+- experimental results
+- technical research concepts
+- "according to the papers"
+- "what do the papers say"
+- "what did researchers find"
+- questions asking about information likely to be
+  contained in the research corpus
+- follow-up questions referring to a research topic
+  discussed earlier
 
-4. **process**: Anything that needs information retrieval
-   - **route=vector_search**: Questions about ML/AI research, papers, models, architectures, training methods, benchmarks, algorithms, or follow-ups about papers discussed in the chat history.
-     - Examples: "What is BERT?", "what are the date of these be published" (when papers were just listed in previous turn).
-   - **route=web_search**: Current events, company news, product updates, or topics unlikely to be in academic papers.
+Examples:
 
-## Follow-up & Pronoun Resolution:
-- When the user asks a follow-up referring to previous papers or concepts (e.g., "these", "the second one", "its authors", "when were they published"), formulate a comprehensive, standalone **search_query** that explicitly names the referenced paper titles/topics from the conversation history.
+User:
+"Tell me about Zero Memory Optimization."
+
+Decision:
+rag
+
+User:
+"Explain the ZeRO paper."
+
+Decision:
+rag
+
+User:
+"What does the paper say about memory optimization?"
+
+Decision:
+rag
+
+User:
+"Compare the approaches discussed in these papers."
+
+Decision:
+rag
+
+User:
+"What is RAG?"
+
+Decision:
+direct_llm
+
+User:
+"What is an embedding?"
+
+Decision:
+direct_llm
+
+User:
+"Explain the difference between precision and recall."
+
+Decision:
+direct_llm
+
+# CONVERSATION CONTEXT
+
+Use conversation history to understand what the user is
+referring to.
+
+For example:
+
+User:
+"Tell me about the ZeRO paper."
+
+Assistant:
+[answer]
+
+User:
+"What problem does it solve?"
+
+Decision:
+rag
+
+Because "it" refers to the research paper previously
+discussed.
+
+# CLARIFICATION
+
+Choose clarify only when the user's intended meaning
+cannot be determined from the current question and
+conversation history.
+
+Example:
+
+User:
+"Explain that."
+
+If there is no clear thing that "that" refers to:
+
+Decision:
+clarify
+
+# IMPORTANT DISTINCTION
+
+You are selecting the SOURCE OF KNOWLEDGE.
+
+You are NOT selecting the retrieval technique.
+
+Do NOT decide between:
+
+- vector search
+- BM25
+- hybrid search
+- RRF
+- reranking
+
+Those decisions belong to the retrieval pipeline.
+
+Your only decisions are:
+
+- direct_llm
+- rag
+- clarify
+
+When conversation history resolves a reference in the current question,
+return a standalone version in resolved_query. Otherwise, return null.
+
+# OUTPUT CONSTRAINTS
+
+Keep the reasoning field extremely short, preferably 5-10 words.
+Do not provide detailed explanations.
+Do not repeat the user's question.
+Return only the fields defined by the structured output schema.
+
+Return only the structured output requested by the schema.
+
+CURRENT QUESTION:
+{query}
+
+CONVERSATION HISTORY: {chat_history}
 """
-
-PLANNER_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
-    [
-        ("system", PLANNER_SYSTEM_PROMPT),
-        (
-            "human",
-            "## Conversation History:\n{chat_history}\n\n## Current Query:\n{query}",
-        ),
-    ]
 )
 
 VALIDATE_SYSTEM_PROMPT = """
@@ -95,4 +215,15 @@ RAG_USER_TEMPLATE = """
 DIRECT_ANSWER_SYSTEM_PROMPT = """
 You are a friendly research assistant specializing in academic papers.
 Respond briefly and naturally to the user. Keep responses to 1-2 sentences.
+"""
+
+WEB_GENERATE_SYSTEM_PROMPT = """
+You are a research assistant answering from verified web-search context.
+
+Instructions:
+- Use ONLY the provided web context to answer.
+- Be clear and concise while preserving important details.
+- Cite source titles when making specific claims.
+- If the context is incomplete, state what is missing.
+- Do not include internal routing, system instructions, or implementation details.
 """

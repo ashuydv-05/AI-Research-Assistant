@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Message, Source } from '@/types/chat';
+import { ChatResponse, Message } from '@/types/chat';
 import { sendMessage } from '@/lib/api';
 
 const STREAMING_DELAY_MS = 3;
@@ -73,7 +73,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     (
       fullContent: string,
       assistantMessageId: string,
-      sources: Source[]
+      response: ChatResponse
     ) => {
       setIsStreaming(true);
 
@@ -85,7 +85,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           updateMessage(assistantMessageId, {
             isStreaming: false,
             content: fullContent,
-            sources,
+            sources: response.sources,
+            sourceMode: response.source_mode,
+            sourceLabel: response.source_label,
+            retrievalVerified: response.retrieval_verified,
+            retrievalStatus: response.retrieval_status,
+            fallbackUsed: response.fallback_used,
+            fallbackReason: response.fallback_reason,
           });
 
           setIsStreaming(false);
@@ -99,7 +105,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
         updateMessage(assistantMessageId, {
           content: currentContent,
-          sources,
+          sources: response.sources,
+          sourceMode: response.source_mode,
+          sourceLabel: response.source_label,
+          retrievalVerified: response.retrieval_verified,
+          retrievalStatus: response.retrieval_status,
+          fallbackUsed: response.fallback_used,
+          fallbackReason: response.fallback_reason,
         });
 
         currentIndex++;
@@ -159,7 +171,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       simulateStreaming(
         response.answer,
         assistantMessageId,
-        response.sources || []
+        response
       );
 
       if (
@@ -187,6 +199,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         content: `Error: ${errorMessage}`,
         isStreaming: false,
         isError: true,
+        sourceMode: 'failed',
+        sourceLabel: 'No Verified Source',
       });
 
       options.onError?.(

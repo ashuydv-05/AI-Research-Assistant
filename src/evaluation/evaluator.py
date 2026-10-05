@@ -1,179 +1,253 @@
 from __future__ import annotations
 
 import json
-import re
-from loguru import logger
-from src.evaluation.models import JudgeScores
+import logging
+from typing import Any
+
 from src.evaluation.llm_clients import BaseLLMClient, get_eval_llm
+from src.evaluation.models import JudgeScores
 
-JUDGE_SYSTEM_PROMPT = """You are an impartial, expert evaluation judge for an academic Question-Answering RAG benchmark.
-You will evaluate the quality of a generated answer given:
-1. User Question
-2. Ground Truth Answer
-3. Retrieved Context
-4. Generated Answer
-
-Evaluate strictly across these 3 criteria on a scale of 0 to 100:
-
-1. CORRECTNESS (0-100):
-   - How accurate and complete is the generated answer compared to the Ground Truth?
-   - 100: Perfectly matches ground truth facts and key concepts.
-   - 75-90: Mostly accurate with minor omissions.
-   - 40-70: Partially accurate, misses important points, or contains slight inaccuracies.
-   - 0-30: Completely wrong, contradictory, or empty.
-
-2. FAITHFULNESS (0-100):
-   - Is the generated answer supported ONLY by the provided Retrieved Context?
-   - 100: Every claim in the answer is grounded in the retrieved context (no hallucinations).
-   - 70-90: Minor statements not explicitly in context but logically inferred.
-   - 30-60: Significant hallucination or ungrounded external assumptions.
-   - 0-20: Entirely hallucinated or contradicts the context.
-
-3. RELEVANCE (0-100):
-   - Does the generated answer directly, clearly, and concisely address the User Question?
-   - 100: Directly and fully answers the question with no irrelevant fluff.
-   - 70-90: Answers the question with some extra or slightly redundant information.
-   - 40-60: Vaguely addresses the question.
-   - 0-30: Refuses to answer or goes completely off-topic.
-
-Compute the OVERALL score as:
-overall = round(0.4 * correctness + 0.3 * faithfulness + 0.3 * relevance, 1)
-
-You MUST reply ONLY with a valid JSON object matching this exact format:
-{
-  "correctness": <float 0-100>,
-  "faithfulness": <float 0-100>,
-  "relevance": <float 0-100>,
-  "overall": <float 0-100>,
-  "reason": "<1-2 sentence concise explanation>"
-}
-Do not include any other text before or after the JSON block."""
-
-JUDGE_USER_PROMPT = """### User Question:
-{question}
-
-### Ground Truth:
-{ground_truth}
-
-### Retrieved Context:
-{context}
-
-### Generated Answer:
-{generated_answer}
-
-Provide your structured JSON evaluation:"""
+logger = logging.getLogger(__name__)
 
 
 class LLMJudge:
-    """LLM-as-Judge evaluator for assessing RAG outputs."""
+    """
+    LLM-based evaluator for generated answers.
 
-    def __init__(self, judge_client: BaseLLMClient | None = None, judge_model_name: str = "auto"):
-        import os
+    Important:
+    - The judge must return real scores.
+    - Judge failures are NOT converted into fake 50/100 scores.
+    - The caller is responsible for deciding how to record failed samples.
+    """
 
+    def __init__(
+        self,
+        judge_model_name: str = "auto",
+        judge_client: BaseLLMClient | None = None,
+    ) -> None:
         if judge_client is not None:
             self.client = judge_client
         else:
-            if judge_model_name in ["auto", "default", "model_1"]:
-                if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-                    judge_model_name = "gemini"
+            if judge_model_name in {"auto", "default", "model_1"}:
+                if __import__("os").getenv("OPENROUTER_API_KEY"):
+                    judge_model_name = "openrouter"
                 else:
                     judge_model_name = "model_1"
+
             self.client = get_eval_llm(judge_model_name)
+
         self.judge_model_name = self.client.model_name
+
+    def evaluate(
+        self,
+        question: str,
+        answer: str,
+        reference_answer: str,
+        context: str,
+    ) -> JudgeScores:
+        """
+        Evaluate a generated answer against the reference answer
+        and retrieved context.
+
+        Raises:
+            RuntimeError:
+                If the LLM judge call fails.
+
+            ValueError:
+                If the judge returns invalid structured output.
+        """
+
+        prompt = self._build_prompt(
+            question=question,
+            answer=answer,
+            reference_answer=reference_answer,
+            context=context,
+        )
+
+        try:
+            raw_response = self.client.generate(prompt, "")
+        except Exception as exc:
+            logger.exception(
+                "[LLMJudge] Judge model failed."
+            )
+            raise RuntimeError(
+                f"LLM judge evaluation failed: {exc}"
+            ) from exc
+
+        try:
+            return self._parse_response(raw_response)
+
+        except Exception as exc:
+            logger.error(
+                "[LLMJudge] Failed to parse judge response: %s",
+                exc,
+            )
+
+            raise ValueError(
+                f"Failed to parse structured output from "
+                f"LLM judge: {exc}"
+            ) from exc
 
     def evaluate_sample(
         self,
         question: str,
-        ground_truth: str,
-        retrieved_context: str,
-        generated_answer: str,
+        answer: str,
+        reference_answer: str,
+        context: str,
     ) -> JudgeScores:
-        """Evaluate a single sample with the LLM judge."""
-        if not generated_answer or not generated_answer.strip():
-            return JudgeScores(
-                correctness=0.0,
-                faithfulness=0.0,
-                relevance=0.0,
-                overall=0.0,
-                reason="Generated answer is empty.",
-            )
+        """
+        Backward-compatible wrapper used by EvaluationRunner.
+        """
 
-        messages = [
-            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": JUDGE_USER_PROMPT.format(
-                    question=question,
-                    ground_truth=ground_truth,
-                    context=retrieved_context[:3000] if retrieved_context else "No context retrieved.",
-                    generated_answer=generated_answer,
-                ),
-            },
-        ]
+        return self.evaluate(
+            question=question,
+            answer=answer,
+            reference_answer=reference_answer,
+            context=context,
+        )
+
+    def _build_prompt(
+        self,
+        *,
+        question: str,
+        answer: str,
+        reference_answer: str,
+        context: str,
+    ) -> str:
+        return f"""
+You are an expert evaluator for a Retrieval-Augmented Generation
+(RAG) system.
+
+Evaluate the generated answer using the question, reference answer,
+and retrieved context.
+
+You must evaluate four dimensions:
+
+1. correctness
+   - Does the answer correctly answer the question?
+   - Compare against the reference answer.
+
+2. faithfulness
+   - Is the answer supported by the retrieved context?
+   - Penalize unsupported claims or hallucinations.
+
+3. relevance
+   - Does the answer directly address the question?
+   - Penalize unnecessary or unrelated information.
+
+4. overall
+   - Overall quality of the answer considering correctness,
+     faithfulness, and relevance.
+
+Return scores from 0 to 100.
+
+Return ONLY valid JSON in exactly this structure:
+
+{{
+    "correctness": 0,
+    "faithfulness": 0,
+    "relevance": 0,
+    "overall": 0,
+    "reason": "brief explanation"
+}}
+
+QUESTION:
+{question}
+
+REFERENCE ANSWER:
+{reference_answer}
+
+RETRIEVED CONTEXT:
+{context}
+
+GENERATED ANSWER:
+{answer}
+""".strip()
+
+    def _parse_response(
+        self,
+        raw_response: Any,
+    ) -> JudgeScores:
+        """
+        Parse structured JSON returned by the judge.
+        """
+
+        if raw_response is None:
+            raise ValueError("Judge returned an empty response.")
+
+        if isinstance(raw_response, str):
+            raw_text = raw_response.strip()
+        else:
+            raw_text = str(raw_response).strip()
+
+        if not raw_text:
+            raise ValueError("Judge returned an empty response.")
+
+        # Remove markdown code fences if the model added them.
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+
+            raw_text = "\n".join(lines).strip()
 
         try:
-            raw_response = self.client.invoke_messages(messages)
-            return self._parse_judge_response(raw_response)
-        except Exception as e:
-            logger.error(f"[LLMJudge] Error during evaluation: {e}")
-            return JudgeScores(
-                correctness=50.0,
-                faithfulness=50.0,
-                relevance=50.0,
-                overall=50.0,
-                reason=f"Judge evaluation encountered error: {str(e)[:100]}",
+            data = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Judge response is not valid JSON: {exc}"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Judge response must be a JSON object."
             )
 
-    def _parse_judge_response(self, raw_text: str) -> JudgeScores:
-        """Parse structured JSON from judge output with fallbacks."""
-        text = raw_text.strip()
-        # Strip markdown code fencing if present
-        if "```json" in text:
-            match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-            if match:
-                text = match.group(1)
-        elif "```" in text:
-            match = re.search(r"```\s*(\{.*?\})\s*```", text, re.DOTALL)
-            if match:
-                text = match.group(1)
+        required_fields = [
+            "correctness",
+            "faithfulness",
+            "relevance",
+            "overall",
+        ]
 
-        # Find first { and last }
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
-            json_str = text[start : end + 1]
+        missing = [
+            field
+            for field in required_fields
+            if field not in data
+        ]
+
+        if missing:
+            raise ValueError(
+                f"Judge response is missing fields: {missing}"
+            )
+
+        scores: dict[str, float] = {}
+
+        for field in required_fields:
             try:
-                data = json.loads(json_str)
-                c = float(data.get("correctness", 0.0))
-                f = float(data.get("faithfulness", 0.0))
-                r = float(data.get("relevance", 0.0))
-                o = float(data.get("overall", round(0.4 * c + 0.3 * f + 0.3 * r, 1)))
-                reason = str(data.get("reason", ""))
-                return JudgeScores(
-                    correctness=max(0.0, min(100.0, c)),
-                    faithfulness=max(0.0, min(100.0, f)),
-                    relevance=max(0.0, min(100.0, r)),
-                    overall=max(0.0, min(100.0, o)),
-                    reason=reason,
-                )
-            except Exception as e:
-                logger.warning(f"[LLMJudge] Failed to parse JSON: {e} from text: {text[:200]}")
+                value = float(data[field])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Judge field '{field}' must be numeric."
+                ) from exc
 
-        # Fallback regex extraction
-        c_match = re.search(r'"correctness"\s*:\s*([0-9.]+)', text)
-        f_match = re.search(r'"faithfulness"\s*:\s*([0-9.]+)', text)
-        r_match = re.search(r'"relevance"\s*:\s*([0-9.]+)', text)
-        if c_match and f_match and r_match:
-            c = float(c_match.group(1))
-            f = float(f_match.group(1))
-            r = float(r_match.group(1))
-            o = round(0.4 * c + 0.3 * f + 0.3 * r, 1)
-            return JudgeScores(correctness=c, faithfulness=f, relevance=r, overall=o, reason="Extracted via regex fallback")
+            if not 0 <= value <= 100:
+                raise ValueError(
+                    f"Judge field '{field}' must be between 0 and 100."
+                )
+
+            scores[field] = value
+
+        reason = str(data.get("reason", "")).strip()
 
         return JudgeScores(
-            correctness=50.0,
-            faithfulness=50.0,
-            relevance=50.0,
-            overall=50.0,
-            reason=f"Failed to parse structured output from judge: {raw_text[:100]}",
+            correctness=scores["correctness"],
+            faithfulness=scores["faithfulness"],
+            relevance=scores["relevance"],
+            overall=scores["overall"],
+            reason=reason,
         )

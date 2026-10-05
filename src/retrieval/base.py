@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.retrieval.hybrid_search import SearchResult
+    from src.retrieval.retrieval_result import SearchResult
 else:
     try:
-        from src.retrieval.hybrid_search import SearchResult
+        from src.retrieval.retrieval_result import SearchResult
     except ImportError:
         SearchResult = object
 

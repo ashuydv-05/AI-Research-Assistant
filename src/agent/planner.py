@@ -1,101 +1,206 @@
 from typing import Literal, Optional
-from loguru import logger
-from pydantic import BaseModel
-from src.config.clients import get_llm_client
-from src.agent.state import AgentState
-from src.config.prompt import PLANNER_PROMPT_TEMPLATE
 import time
+import uuid
 
+from loguru import logger
+from pydantic import BaseModel, Field
+
+from src.agent.state import AgentState
+from src.config.clients import get_llm_client
+from src.config.prompt import PLANNER_PROMPT_TEMPLATE
+
+
+# ---------------------------------------------------------
+# 1. Structured output from Planner LLM
+# ---------------------------------------------------------
 
 class PlannerOutcome(BaseModel):
-    decision: Literal["direct_answer", "reject", "clarify", "process"]
-    route: Optional[Literal["vector_search", "web_search"]] = None
-    reasoning: str
-    search_query: Optional[str] = None
+    decision: Literal[
+        "direct_llm",
+        "rag",
+        "clarify",
+    ]
+
+    resolved_query: Optional[str] = Field(
+        default=None,
+        description=(
+            "A standalone version of the user's question after "
+            "resolving references using conversation history."
+        ),
+    )
+
+   
 
 
-def format_chat_history(chat_history: list[dict], current_query: str) -> str:
-    """Format past messages for the planner prompt."""
+# ---------------------------------------------------------
+# 2. Format conversation history
+# ---------------------------------------------------------
+
+def format_chat_history(
+    chat_history: list[dict],
+    current_query: str,
+) -> str:
+
     if not chat_history:
-        return "(No previous messages in this session)"
+        return "(No previous conversation)"
 
-    # Filter out current message if already in chat_history
-    history_to_format = chat_history[:-1] if (
-        chat_history and chat_history[-1].get("role") == "user" and chat_history[-1].get("content") == current_query
-    ) else chat_history
+    # Avoid sending the current user message twice
+    history = chat_history
 
-    if not history_to_format:
-        return "(No previous messages in this session)"
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip() == current_query.strip()
+    ):
+        history = history[:-1]
+
+    if not history:
+        return "(No previous conversation)"
+
+    # Keep recent context
+    history = history[-6:]
 
     lines = []
-    for msg in history_to_format[-6:]:  # Keep last 3 turns
-        role = "User" if msg.get("role") == "user" else "Assistant"
-        content = msg.get("content", "").strip()
-        lines.append(f"{role}: {content}")
+
+    for message in history:
+        role = message.get("role", "user")
+        content = message.get("content", "").strip()
+
+        if not content:
+            continue
+
+        role_name = (
+            "User"
+            if role == "user"
+            else "Assistant"
+        )
+
+        lines.append(f"{role_name}: {content}")
+
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------
+# 3. Planner Node
+# ---------------------------------------------------------
+
 def plan_node(state: AgentState) -> dict:
-    import uuid
 
     call_id = str(uuid.uuid4())[:8]
-    query = state["query"]
-    logger.info(f"[Planner] Called - id={call_id}, query={query[:50]}...")
-    existing_timings = state.get("node_timings", {})
-    llm = get_llm_client()
-    if not llm:
-        raise NodeInterrupt("Service temporarily unavailable", id="planner")
 
-    history_str = format_chat_history(state.get("chat_history", []), query)
+    query = state["query"]
+    chat_history = state.get("chat_history", [])
+
+    logger.info(
+        f"[Planner] Called - id={call_id}, "
+        f"query={query[:80]}..."
+    )
+
+    existing_timings = state.get("node_timings", {})
+
+    # -----------------------------------------------------
+    # Step 1: Prepare conversation context
+    # -----------------------------------------------------
+
+    history_str = format_chat_history(
+        chat_history,
+        query,
+    )
+
+    # -----------------------------------------------------
+    # Step 2: Get LLM
+    # -----------------------------------------------------
+
+    llm = get_llm_client(
+        max_tokens=512,
+        temperature=0.0,
+    )
+
+    if not llm:
+        raise RuntimeError(
+            "Planner LLM is temporarily unavailable."
+        )
+
+    # -----------------------------------------------------
+    # Step 3: Give query + history to Planner LLM
+    # -----------------------------------------------------
 
     start_time = time.time()
+
     try:
-        structured_llm = llm.with_structured_output(PlannerOutcome)
-        result = structured_llm.invoke(
-            PLANNER_PROMPT_TEMPLATE.invoke({"query": query, "chat_history": history_str})
+
+        structured_llm = llm.with_structured_output(
+            PlannerOutcome
         )
+
+        prompt = PLANNER_PROMPT_TEMPLATE.invoke(
+            {
+                "query": query,
+                "chat_history": history_str,
+            }
+        )
+
+        result = structured_llm.invoke(prompt)
+
         elapsed = (time.time() - start_time) * 1000
-        new_timings = {**existing_timings, "planner": elapsed}
+
+        # -------------------------------------------------
+        # Step 4: Validate structured output
+        # -------------------------------------------------
 
         if isinstance(result, dict):
             result = PlannerOutcome(**result)
 
-        resolved_search_query = result.search_query or query
+        # -------------------------------------------------
+        # Step 5: Resolve query
+        # -------------------------------------------------
 
-        if result.decision in ["direct_answer", "reject", "clarify"]:
-            return {
-                "decision": result.decision,
-                "route": None,
-                "search_query": resolved_search_query,
-                "reasoning_step": [
-                    f"PLANNER: {result.decision} - {result.reasoning} (id={call_id})"
-                ],
-                "node_timings": new_timings,
-            }
-        if result.decision == "process":
-            route = result.route or "vector_search"
-            return {
-                "decision": "process",
-                "route": route,
-                "search_query": resolved_search_query,
-                "reasoning_step": [f"PLANNER: {result.reasoning} - resolved search query: \"{resolved_search_query}\" - routing to {route}"],
-                "node_timings": new_timings,
-            }
+        resolved_query = (
+            result.resolved_query
+            or query
+        )
+
+        # -------------------------------------------------
+        # Step 6: Build planner reasoning
+        # -------------------------------------------------
+
+      
+
+        # -------------------------------------------------
+        # Step 7: Return state update
+        # -------------------------------------------------
+
         return {
-            "decision": "process",
-            "route": "vector_search",
-            "search_query": query,
-            "reasoning_step": ["PLANNER: Default routing to vector_search"],
-            "node_timings": new_timings,
-        }
-    except Exception as e:
-        logger.error(f"[Planner] Structured route failed, defaulting to vector_search: {e}")
-        return {
-            "decision": "process",
-            "route": "vector_search",
-            "search_query": query,
+            "decision": result.decision,
+
+            # Only RAG needs an actual retrieval query,
+            # but keeping this in state is useful.
+            "search_query": resolved_query,
+
             "reasoning_step": [
-                f"PLANNER: Fallback to vector_search after planner error ({e})"
+                f"PLANNER: {result.decision}"
             ],
-            "node_timings": {**existing_timings, "planner": (time.time() - start_time) * 1000},
+
+            "node_timings": {
+                **existing_timings,
+                "planner": elapsed,
+            },
         }
+
+    except Exception as e:
+
+        elapsed = (time.time() - start_time) * 1000
+
+        logger.exception(
+            f"[Planner] Failed - id={call_id}"
+        )
+
+        # Important:
+        # Do NOT silently decide RAG if the planner fails.
+        #
+        # A planner failure is different from a planner decision.
+        # Let the workflow/application handle the failure explicitly.
+
+        raise RuntimeError(
+            f"Planner failed: {str(e)}"
+        ) from e

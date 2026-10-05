@@ -4,6 +4,8 @@
 # 🚀 1-Click Complete System Launcher (arXiv AI Research Assistant & Benchmark)
 # ==============================================================================
 
+
+#ACTIVATE VIRTUAL ENVIRONMENT  "source .venv/bin/activate "
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,28 +55,8 @@ if [ ! -d "frontend/node_modules" ]; then
     (cd frontend && npm install)
 fi
 
-# 4. Check & Start Docker Databases (Qdrant + Elasticsearch)
-echo -e "\n${BLUE}[1/3] Checking Docker Databases (Qdrant & Elasticsearch)...${NC}"
-if ! docker info > /dev/null 2>&1; then
-    echo -e "${YELLOW}⚠️ Docker is not running. Please launch Docker Desktop for local Vector & BM25 search.${NC}"
-else
-    QDRANT_OK=false
-    ES_OK=false
-    if curl -s http://localhost:6333/collections > /dev/null 2>&1; then
-        QDRANT_OK=true
-    fi
-    if curl -s http://localhost:9200 > /dev/null 2>&1; then
-        ES_OK=true
-    fi
-
-    if [ "$QDRANT_OK" = true ] && [ "$ES_OK" = true ]; then
-        echo -e "${GREEN}✓ Qdrant (:6333) and Elasticsearch (:9200) are healthy and running.${NC}"
-    else
-        echo -e "${BLUE}▶ Launching database containers via Docker Compose...${NC}"
-        docker compose up -d qdrant elasticsearch
-        echo -e "${GREEN}✓ Databases started successfully.${NC}"
-    fi
-fi
+# 4. Retrieval backends are cloud services configured in .env.
+echo -e "\n${BLUE}[1/3] Using configured Qdrant Cloud and Elasticsearch Cloud services.${NC}"
 
 # 5. Trap Ctrl+C for clean shutdown
 cleanup() {

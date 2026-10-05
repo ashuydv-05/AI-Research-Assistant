@@ -14,6 +14,10 @@ request_groq_api_key: ContextVar[str | None] = ContextVar(
     "request_groq_api_key", default=None
 )
 
+request_tavily_api_key: ContextVar[str | None] = ContextVar(
+    "request_tavily_api_key", default=None
+)
+
 
 def extract_message_text(response) -> str:
     """Qwen/GPT-OSS often put the visible answer in reasoning fields, leaving .content empty."""
@@ -40,8 +44,10 @@ def extract_message_text(response) -> str:
     return ""
 
 
-def get_llm_client() -> ChatOpenAI:
-    max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "8192"))
+def get_llm_client(
+    *, max_tokens: int | None = None, temperature: float = 0.7
+) -> ChatOpenAI:
+    resolved_max_tokens = max_tokens or int(os.getenv("GROQ_MAX_TOKENS", "8192"))
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     api_key = request_groq_api_key.get() or os.getenv("GROQ_API_KEY", "")
     return ChatOpenAI(
@@ -50,8 +56,8 @@ def get_llm_client() -> ChatOpenAI:
             "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
         ),
         model=model,
-        temperature=0.7,
-        max_tokens=max_tokens,
+        temperature=temperature,
+        max_tokens=resolved_max_tokens,
     )
 
 
@@ -67,11 +73,17 @@ def get_qdrant_client() -> QdrantClient:
 
 def get_es_client() -> Elasticsearch | None:
     es_url = os.getenv("ES_URL", settings.elasticsearch.url)
-    # Render/Vercel have no local Elasticsearch. Skip rather than timing out.
-    if not es_url or "localhost" in es_url or "127.0.0.1" in es_url:
-        if os.getenv("ES_ENABLED", "false").lower() != "true":
-            return None
+    es_api_key = os.getenv("ES_API_KEY", settings.elasticsearch.api_key)
+
+    if not es_url:
+        return None
+
     try:
-        return Elasticsearch(es_url, request_timeout=1.0, max_retries=0)
+        return Elasticsearch(
+            es_url,
+            api_key=es_api_key,
+            request_timeout=settings.elasticsearch.request_timeout,
+            max_retries=0,
+        )
     except Exception:
         return None

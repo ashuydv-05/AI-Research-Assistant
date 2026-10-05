@@ -9,6 +9,7 @@ from src.agent.vector_search import vector_search_node
 from src.agent.web_search import web_search_node
 from src.agent.validate import validation_node
 from src.agent.gen import gen_node
+from src.agent.provenance import SOURCE_LABELS, default_retrieval_status
 import os
 import uuid
 from datetime import datetime, timezone
@@ -23,17 +24,20 @@ class WorkflowOutcome:
     node_timings: dict = field(default_factory=dict)
     trace_id: str | None = None
     langfuse_url: str | None = None
+    source_mode: str = "failed"
+    source_label: str = SOURCE_LABELS["failed"]
+    retrieval_verified: bool = False
+    retrieval_status: dict[str, str] = field(default_factory=default_retrieval_status)
+    fallback_used: bool = False
+    fallback_reason: str | None = None
 
 
 def route_question(state: AgentState) -> str:
     decision = state.get("decision")
-    route = state.get("route")
-    logger.info(f"[Router] Route decision - decision={decision}, route={route}")
-    if decision in ["direct_answer", "reject", "clarify"]:
+    logger.info(f"[Router] Route decision - decision={decision}")
+    if decision in ["direct_llm", "clarify"]:
         return "generate"
-    if decision == "process":
-        if route == "web_search":
-            return "web_search"
+    if decision == "rag":
         return "vector_search"
     logger.warning("[Router] Unknown state, defaulting to generate")
     return "generate"
@@ -46,6 +50,17 @@ def decide_to_generate(state: AgentState) -> str:
         return "generate"
     logger.info(f"[Router] Documents {validation}, falling back to web_search")
     return "web_search"
+
+
+def route_after_retrieval(state: AgentState) -> str:
+    status = state.get("retrieval_status", {})
+    hybrid_ready = all(
+        status.get(stage) == "success" for stage in ("dense", "bm25", "rrf")
+    )
+    if hybrid_ready and state.get("document"):
+        return "validate"
+    logger.warning("[Router] Strict hybrid retrieval failed; stopping grounded path")
+    return "generate"
 
 
 def create_workflow() -> MultiAgentWorkflow:
@@ -74,7 +89,11 @@ class MultiAgentWorkflow:
                 "web_search": "web_search",
             },
         )
-        workflow.add_edge("vector_search", "validate")
+        workflow.add_conditional_edges(
+            "vector_search",
+            route_after_retrieval,
+            {"validate": "validate", "generate": "generate"},
+        )
         workflow.add_conditional_edges(
             "validate",
             decide_to_generate,
@@ -90,7 +109,7 @@ class MultiAgentWorkflow:
         input_state: AgentState = {
             "query": query,
             "search_query": None,
-            "decision": "process",
+            "decision": "rag",
             "route": None,
             "document": [],
             "validation_result": None,
@@ -105,6 +124,12 @@ class MultiAgentWorkflow:
                 }
             ],
             "node_timings": {},
+            "source_mode": "failed",
+            "source_label": SOURCE_LABELS["failed"],
+            "retrieval_verified": False,
+            "retrieval_status": default_retrieval_status(),
+            "fallback_used": False,
+            "fallback_reason": None,
         }
 
         callbacks = []
@@ -130,6 +155,7 @@ class MultiAgentWorkflow:
                 answer="Service temporarily unavailable",
                 source=[],
                 reasoning_step=[f"INTERRUPT: {e}"],
+                fallback_reason="The answer service is temporarily unavailable.",
             )
         except GraphRecursionError as e:
             logger.error(f"[Workflow] Recursion limit exceeded: {e}")
@@ -137,13 +163,15 @@ class MultiAgentWorkflow:
                 answer="Service temporarily unavailable",
                 source=[],
                 reasoning_step=[f"RECURSION_ERROR: {e}"],
+                fallback_reason="The answer service is temporarily unavailable.",
             )
         except Exception as e:
             logger.exception(f"[Workflow] Unexpected error: {e}")
             return WorkflowOutcome(
                 answer="Service temporarily unavailable",
                 source=[],
-                reasoning_step=[f"ERROR: {str(e)}"],
+                reasoning_step=["ERROR: Workflow unavailable"],
+                fallback_reason="The answer service is temporarily unavailable.",
             )
 
         return WorkflowOutcome(
@@ -151,4 +179,12 @@ class MultiAgentWorkflow:
             source=result.get("source", []),
             reasoning_step=result.get("reasoning_step", []),
             node_timings=result.get("node_timings", {}),
+            source_mode=result.get("source_mode", "failed"),
+            source_label=result.get("source_label", SOURCE_LABELS["failed"]),
+            retrieval_verified=result.get("retrieval_verified", False),
+            retrieval_status=result.get(
+                "retrieval_status", default_retrieval_status()
+            ),
+            fallback_used=result.get("fallback_used", False),
+            fallback_reason=result.get("fallback_reason"),
         )

@@ -11,26 +11,35 @@ def vector_search_node(state: AgentState) -> dict:
     start_time = time.time()
     try:
         searcher = VectorSearch()
-        results = searcher.search(query, top_k=5)
+        outcome = searcher.search_with_status(query, top_k=5)
+        results = outcome.results
         elapsed = (time.time() - start_time) * 1000
-        new_timings = {**existing_timings, "vector_search": elapsed}
+        new_timings = {
+            **existing_timings,
+            **outcome.stage_timings_ms,
+            "vector_search": elapsed,
+        }
 
-        docs_as_dicts = [
-            {
-                "id": doc.id,
-                "content": doc.content,
-                "title": doc.title,
-                "score": doc.score,
-                "source": doc.source,
-                "metadata": doc.metadata,
-            }
-            for doc in results
-        ]
+        docs_as_dicts = [doc.to_dict() for doc in results]
+
+        hybrid_succeeded = outcome.succeeded
+        reason = outcome.failure_reason
 
         return {
             "document": docs_as_dicts,
+            "retrieval_status": {
+                **state.get("retrieval_status", {}),
+                **outcome.retrieval_status,
+            },
+            "fallback_reason": None if hybrid_succeeded else (
+                reason or "Strict hybrid retrieval did not return complete evidence."
+            ),
             "reasoning_step": [
-                f"VECTOR_SEARCH: Retrieved {len(docs_as_dicts)} document for: {query[:50]}..."
+                (
+                    f"VECTOR_SEARCH: Retrieved {len(docs_as_dicts)} documents for: {query[:50]}..."
+                    if hybrid_succeeded
+                    else "VECTOR_SEARCH: Strict hybrid retrieval failed; answer generation stopped"
+                )
             ],
             "node_timings": new_timings,
         }
@@ -38,6 +47,17 @@ def vector_search_node(state: AgentState) -> dict:
         logger.error(f"[VectorSearch] Error: {e}")
         return {
             "document": [],
-            "reasoning_step": [f"VECTOR_SEARCH: Failed ({e})"],
-            "node_timings": {**existing_timings, "vector_search": (time.time() - start_time) * 1000},
+            "retrieval_status": {
+                **state.get("retrieval_status", {}),
+                "dense": "failed",
+                "bm25": "failed",
+                "rrf": "failed",
+                "reranker": "not_run",
+            },
+            "fallback_reason": "Strict hybrid retrieval is unavailable.",
+            "reasoning_step": ["VECTOR_SEARCH: Hybrid retrieval unavailable"],
+            "node_timings": {
+                **existing_timings,
+                "vector_search": (time.time() - start_time) * 1000,
+            },
         }

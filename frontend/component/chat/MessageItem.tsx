@@ -4,7 +4,20 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  ArrowRight,
+  BadgeCheck,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  GitBranch,
+  Info,
+  AlertTriangle,
+  XCircle,
+} from 'lucide-react';
 import { useState, ComponentPropsWithoutRef } from 'react';
 import { Message, Source } from '@/types/chat';
 
@@ -20,7 +33,7 @@ export function MessageItem({ message }: MessageItemProps) {
       <div className="max-w-3xl mx-auto">
         <div className={`${isUser ? 'flex justify-end' : ''}`}>
           {isUser ? (
-            <div className="max-w-[80%] bg-[#f4f2ff] border border-[#e2dcff] rounded-2xl rounded-tr-sm px-4 py-3 text-slate-800 text-sm font-medium leading-relaxed break-words shadow-sm">
+            <div className="max-w-[80%] rounded-lg rounded-tr-sm border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium leading-relaxed text-slate-800 shadow-sm break-words">
               {message.content}
             </div>
           ) : (
@@ -43,6 +56,13 @@ export function MessageItem({ message }: MessageItemProps) {
                 )}
               </div>
 
+              {!message.isStreaming && message.sourceMode && (
+                <>
+                  <SourceBadge message={message} />
+                  <RetrievalJourney message={message} />
+                </>
+              )}
+
               {message.sources && message.sources.length > 0 && (
                 <SourcesSection sources={message.sources} />
               )}
@@ -50,6 +70,96 @@ export function MessageItem({ message }: MessageItemProps) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SourceBadge({ message }: { message: Message }) {
+  const mode = message.sourceMode || 'failed';
+  const config = {
+    hybrid: {
+      icon: <BadgeCheck size={18} />,
+      label: message.sourceLabel || 'Fully Verified Hybrid RAG',
+      detail: 'Dense + BM25 + RRF - Validation passed',
+      classes: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+    },
+    web: {
+      icon: <ExternalLink size={18} />,
+      label: message.sourceLabel || 'Web Search',
+      detail: 'Hybrid retrieval could not provide sufficient context.',
+      classes: 'border-sky-200 bg-sky-50 text-sky-900',
+    },
+    direct: {
+      icon: <Info size={18} />,
+      label: message.sourceLabel || 'Direct LLM',
+      detail: 'No document retrieval was used.',
+      classes: 'border-slate-200 bg-slate-50 text-slate-900',
+    },
+    failed: {
+      icon: <AlertTriangle size={18} />,
+      label: message.sourceLabel || 'No Verified Source',
+      detail: 'No sufficient reliable context was found.',
+      classes: 'border-amber-200 bg-amber-50 text-amber-950',
+    },
+  }[mode];
+
+  return (
+    <div className={`mt-5 rounded-lg border p-3 ${config.classes}`}>
+      <div className="flex items-center gap-2 text-sm font-extrabold">
+        {config.icon}
+        <span>{config.label}</span>
+      </div>
+      <p className="mt-1 pl-6 text-xs opacity-75">{config.detail}</p>
+    </div>
+  );
+}
+
+function RetrievalJourney({ message }: { message: Message }) {
+  const [expanded, setExpanded] = useState(false);
+  const status = message.retrievalStatus;
+  if (!status) return null;
+
+  const steps = message.sourceMode === 'direct'
+    ? [
+        { label: 'Planner', detail: 'General query detected', state: 'success' as const },
+        { label: 'Direct LLM', detail: 'No retrieval used', state: 'next' as const },
+      ]
+    : [
+        { label: 'Planner', detail: 'Research query detected', state: 'success' as const },
+        { label: 'Dense Retrieval', detail: 'Qdrant', state: status.dense },
+        { label: 'BM25 Retrieval', detail: 'Elasticsearch', state: status.bm25 },
+        { label: 'RRF', detail: 'Results combined', state: status.rrf },
+        { label: 'Validation', detail: status.validation === 'passed' ? 'Context verified' : 'Insufficient context', state: status.validation },
+        ...(message.fallbackUsed
+          ? [{ label: 'Tavily', detail: status.tavily === 'success' ? 'Web sources retrieved' : 'No reliable web context', state: status.tavily }]
+          : []),
+        { label: 'Answer', detail: message.sourceMode === 'failed' ? 'No verified answer generated' : 'Response generated', state: message.sourceMode === 'failed' ? 'failed' : 'success' },
+      ];
+
+  return (
+    <div className="mt-3 border-b border-slate-200 pb-4">
+      <button
+        onClick={() => setExpanded((value) => !value)}
+        className="flex items-center gap-2 text-xs font-bold text-slate-600 transition hover:text-indigo-700"
+      >
+        <GitBranch size={15} />
+        View Retrieval Journey
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+      {expanded && (
+        <ol className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          {steps.map((step) => {
+            const failed = step.state === 'failed';
+            const skipped = step.state === 'not_run';
+            return (
+              <li key={step.label} className="flex items-start gap-2 text-xs">
+                {failed ? <XCircle size={15} className="mt-0.5 shrink-0 text-rose-600" /> : skipped ? <ArrowRight size={15} className="mt-0.5 shrink-0 text-slate-400" /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />}
+                <span><strong className="text-slate-800">{step.label}</strong><span className="ml-2 text-slate-500">{step.detail}</span></span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }
@@ -274,42 +384,18 @@ function SourcesSection({
 }: {
   sources: Source[];
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   if (sources.length === 0) {
     return null;
   }
 
   return (
-    <div className="mt-5 pt-3 border-t border-slate-100">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-[#5542f6] transition-colors"
-      >
-        {isExpanded ? (
-          <ChevronDown size={14} />
-        ) : (
-          <ChevronRight size={14} />
-        )}
-
-        <span>
-          {isExpanded
-            ? 'Hide sources'
-            : `Sources (${sources.length})`}
-        </span>
-      </button>
-
-      {isExpanded && (
-        <div className="mt-3 grid gap-2">
-          {sources.map((source, index) => (
-            <SourceItem
-              key={source.id || index}
-              source={source}
-              index={index}
-            />
-          ))}
-        </div>
-      )}
+    <div className="mt-4">
+      <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Sources ({sources.length})</h3>
+      <div className="mt-3 grid gap-2">
+        {sources.map((source, index) => (
+          <SourceItem key={source.id ?? index} source={source} index={index} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -321,10 +407,16 @@ function SourceItem({
   source: Source;
   index: number;
 }) {
+  const metadata = source.metadata || {};
+  const paperId = source.paper_id || source.arxiv_id || metadata.paper_id || metadata.arxiv_id;
+  const year = source.year || metadata.year;
+  const url = source.pdf_url || metadata.pdf_url || metadata.url;
+  const section = source.section || metadata.section;
+
   return (
-    <div className="flex items-start gap-3 p-3 bg-[#fcfcff] rounded-xl border border-slate-200/80 hover:border-[#5542f6]/30 hover:shadow-sm transition-all duration-200">
-      <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-[#eeebff] flex items-center justify-center shadow-xs">
-        <span className="text-xs font-bold text-[#5542f6]">
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition hover:border-indigo-300">
+      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-indigo-50">
+        <span className="text-xs font-bold text-indigo-700">
           {index + 1}
         </span>
       </div>
@@ -335,21 +427,17 @@ function SourceItem({
         </div>
 
         <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 flex-wrap">
-          {source.arxiv_id && (
-            <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[#10a37f]">
-              {source.arxiv_id}
+          {paperId && (
+            <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-indigo-700">
+              {String(paperId)}
             </span>
           )}
 
-          {source.year && (
-            <span>{source.year}</span>
+          {year && (
+            <span>{String(year)}</span>
           )}
 
-          {source.score !== undefined && source.score > 0 && (
-            <span className="text-green-600 font-medium">
-              {(source.score * 100).toFixed(0)}% match
-            </span>
-          )}
+          {section && <span>{String(section)}</span>}
         </div>
 
         {Array.isArray(source.authors) &&
@@ -361,26 +449,15 @@ function SourceItem({
           )}
       </div>
 
-      {source.pdf_url && (
+      {typeof url === 'string' && url && (
         <a
-          href={source.pdf_url}
+          href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex-shrink-0 text-gray-400 hover:text-[#10a37f] transition-colors p-1"
-          title="Open PDF"
+          className="flex-shrink-0 p-1 text-slate-400 transition-colors hover:text-indigo-700"
+          title="Open source"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
+          <ExternalLink size={16} />
         </a>
       )}
     </div>

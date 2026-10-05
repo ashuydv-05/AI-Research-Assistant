@@ -1,21 +1,26 @@
-# Byte-compiled / optimized / DLL files
+# ============================================
+# Python
+# ============================================
+
 __pycache__/
 *.py[cod]
-
-# C extensions
 *.so
 
-# Distribution / packaging
-.Python
+# Virtual environments
+.venv/
+venv/
 env/
+
+# Python packaging
+.Python
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
-/lib/
-/lib64/
+lib/
+lib64/
 !frontend/lib/
 parts/
 sdist/
@@ -25,124 +30,159 @@ var/
 *.egg
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# ============================================
+# Environment / Secrets
+# ============================================
 
-# Unit test / coverage reports
-htmlcov/
+.env
+*.env.local
+*.env.production
+*.env.development
+
+# Service account / credentials
+app/google-service-account.json
+
+# ============================================
+# Logs
+# ============================================
+
+*.log
+logs/
+fetch.log
+
+# ============================================
+# Databases / Local Storage
+# ============================================
+
+*.db
+*.rdb
+
+# Local Qdrant
+qdrant_storage/
+
+# Local Elasticsearch
+es_data/
+
+# ============================================
+# Testing / Coverage
+# ============================================
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .tox/
+.cache/
+
 .coverage
 .coverage.*
-.cache
+htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
 
-# Translations
-*.mo
-*.pot
+tests/results/*.txt
 
-# Django stuff:
-*.log
+# ============================================
+# IDE / Editor
+# ============================================
 
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# DotEnv configuration
-.env
-
-# Database
-*.db
-*.rdb
-
-# Pycharm
-.idea
-
-# VS Code
+.idea/
 .vscode/
 *.code-workspace
-
-# Spyder
 .spyproject/
-
-# Jupyter NB Checkpoints
-.ipynb_checkpoints/
-
-# Mac OS-specific storage files
-.DS_Store
-
-# vim
 *.swp
 *.swo
 
-# Mypy cache
-.mypy_cache/
+# ============================================
+# Jupyter
+# ============================================
 
-# Virtual environment
-.venv/
-venv/
+.ipynb_checkpoints/
 
-# Alembic migrations
-app/alembic/versions/*
-!app/alembic/versions/.gitkeep
+# ============================================
+# macOS
+# ============================================
 
-# Launchpad playground
-playground/*.png
+.DS_Store
 
-app/google-service-account.json
+# ============================================
+# Documentation Build
+# ============================================
 
-# Project specific
-logs/
-data/cache/
-qdrant_storage/
-es_data/
-*.log
+docs/_build/
 
-# Next.js
+# ============================================
+# Frontend / Next.js
+# ============================================
+
 frontend/.next/
 frontend/node_modules/
 frontend/out/
 frontend/dist/
 
 # ============================================
-# Project-specific ignores (after refactor)
+# Project Data / Runtime Artifacts
 # ============================================
 
-# Logs
-logs/
-*.log
-fetch.log
-
-# Test results
-tests/results/*.txt
-
-# Data cache
 data/cache/
 
-# Vector databases (local storage)
-qdrant_storage/
-es_data/
+# Runtime uploads
+uploads/*
+!uploads/.gitkeep
+
+# Processed / generated data
+data/processed/papers.json
+
+# Evaluation generated data
+data/evaluation/golden_dataset.json
+data/evaluation/papers/*
+!data/evaluation/papers/.gitkeep
+
+# ============================================
+# Legacy / Local Project Artifacts
+# ============================================
+
+# Old local Qdrant storage
+AI-research-assistant-*/
+
+# Old script directory
+script/
+
+# Old test directory
+test/
+
+# ============================================
+# Local Tools / AI Assistant Artifacts
+# ============================================
 
 .claude
-
-# Ruff cache
-.ruff_cache/
-
-# Downloaded PDFs (optional - uncomment if you don't want to commit PDFs)
-# data/raw/pdfs/
-
-# Processed data (optional - uncomment if files are too large)
-# data/processed/*.json
-
-# AI Assistant artifacts
 .sisyphus/
 .boulder.json
+
+# ============================================
+# Optional: Large Dataset Files
+# ============================================
+
+# Uncomment if you don't want to commit raw PDFs
+# data/raw/pdfs/
+
+# Uncomment if processed JSON becomes too large
+# data/processed/*.json
+
+# ============================================
+# macOS / Misc
+# ============================================
+
+.DS_Store
+data/evaluation/results/*.json
+
+# Next.js generated files
+frontend/.next/
+frontend/.next-dev/
+frontend/tsconfig.tsbuildinfo
+
+# Local research PDFs
+data/raw/*.pdf

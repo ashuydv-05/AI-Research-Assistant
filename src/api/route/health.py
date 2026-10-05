@@ -3,7 +3,7 @@ from loguru import logger
 from src.api.dependencies import get_workflow
 from src.agent.workflow import MultiAgentWorkflow
 from src.api.models import HealthCheck
-from src.config.clients import get_qdrant_client
+from src.config.clients import get_es_client, get_qdrant_client
 from src.config.settings import settings
 
 
@@ -34,10 +34,23 @@ async def health_check(
         logger.warning(f"Qdrant health check failed: {e}")
         components["qdrant"] = "unhealthy"
 
+    try:
+        es = get_es_client()
+        if es is None:
+            components["elasticsearch"] = "not_configured"
+        else:
+            count = es.count(index=settings.elasticsearch.index).get("count", 0)
+            components["elasticsearch"] = "healthy" if count > 0 else "empty"
+            components["elasticsearch_documents"] = str(count)
+    except Exception as e:
+        logger.warning(f"Elasticsearch health check failed: {e}")
+        components["elasticsearch"] = "unhealthy"
+
     qdrant_ok = components.get("qdrant") == "healthy"
+    elasticsearch_ok = components.get("elasticsearch") == "healthy"
     workflow_ok = components.get("workflow") == "healthy"
     return HealthCheck(
-        status="healthy" if qdrant_ok and workflow_ok else "degraded",
+        status="healthy" if qdrant_ok and elasticsearch_ok and workflow_ok else "degraded",
         version="2.0.0",
         components=components,
     )

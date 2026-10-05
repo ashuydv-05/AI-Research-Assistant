@@ -1,17 +1,9 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-sans',
-  display: 'swap',
-});
-
 export const metadata: Metadata = {
-  title: 'arXiv Research Assistant',
-  description: 'AI-powered research assistant for arXiv papers',
+  title: 'HYBRID RAG | arXiv Research Assistant',
+  description: 'Verified AI research assistance over an arXiv paper corpus.',
 };
 
 export default function RootLayout({
@@ -20,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={plusJakartaSans.variable}>
+    <html lang="en">
       <body className="font-sans antialiased bg-white text-slate-900 min-h-screen">
         {children}
       </body>
